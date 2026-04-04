@@ -1,0 +1,15 @@
+node_modules/
+dist/
+__pycache__/
+*.pyc
+db.sqlite3
+geotools.db
+.DS_Store
+.env
+*.zip
+staticfiles/
+数据/
+*.raw
+*.docx
+*.drawio
+package-lock.json
