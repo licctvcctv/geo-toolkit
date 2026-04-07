@@ -465,10 +465,11 @@ function cleanHeader(header: string): string {
   return String(header ?? '')
     .trim()
     .replace(/\s+/g, '')
-    .replace(/[（(][%％wt]*[）)]/g, '')
+    .replace(/[（(][%％wt]*[）)]/g, '')  // (%), (wt%), （%）
     .replace(/^\(%\)\[?/, '')
     .replace(/\]?\(%\)$/, '')
-    .replace(/[%％]/g, '');
+    .replace(/[%％]/g, '')
+    .replace(/[\[\]]/g, '');             // 去掉残留的方括号，如 (%)[SiO2 → [SiO2 → SiO2
 }
 
 /** 检查清理后的列名是否匹配某个氧化物。 */
