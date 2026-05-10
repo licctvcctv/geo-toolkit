@@ -1,5 +1,7 @@
 import json
+import os
 import urllib.request
+from pathlib import Path
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_POST
 from django.contrib.auth.models import User
@@ -17,10 +19,26 @@ from .geo_calculations import (
     classify_muscovite,
 )
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text(encoding='utf-8').splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#') or '=' not in stripped:
+            continue
+        key, value = stripped.split('=', 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_env_file(BASE_DIR / '.env')
+
 # AI API 配置（密钥仅存在于后端，不暴露给前端）
-SILICONFLOW_API_KEY = 'sk-pqeadxafmjyyjlfvwdboamyktxxpghhyfrtrtdzqwbqgkwdm'
-SILICONFLOW_API_URL = 'https://api.siliconflow.cn/v1/chat/completions'
-SILICONFLOW_MODEL = 'Qwen/QwQ-32B'
+SILICONFLOW_API_KEY = os.getenv('SILICONFLOW_API_KEY', '')
+SILICONFLOW_API_URL = os.getenv('SILICONFLOW_API_URL', 'https://api.siliconflow.cn/v1/chat/completions')
+SILICONFLOW_MODEL = os.getenv('SILICONFLOW_MODEL', 'deepseek-ai/DeepSeek-V4-Flash')
 
 
 def _parse_json(request):

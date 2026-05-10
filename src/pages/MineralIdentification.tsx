@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Search, FileSpreadsheet, Calculator, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { parseFile } from '../utils/parseFile';
+import { detectParsedDataKind } from '../utils/dataKind';
 
 const MineralIdentification: React.FC = () => {
   const [data, setData] = useState<any[]>([]);
@@ -19,10 +20,17 @@ const MineralIdentification: React.FC = () => {
     if (!file) return;
     try {
       const parsedData = await parseFile(file);
-      if (parsedData.length === 0) {
+      const kind = detectParsedDataKind(parsedData);
+      if (parsedData.length === 0 || kind === 'unknown') {
         setData([]);
         setResults([]);
         setError('未识别到可用的氧化物分析数据，请上传包含 SiO2、Al2O3、FeO、MgO 等列的 Excel/CSV 文档');
+        return;
+      }
+      if (kind !== 'oxide') {
+        setData([]);
+        setResults([]);
+        setError('当前文件属于 XRD 图谱/寻峰数据，请切换到“数据可视化”页面查看。');
         return;
       }
       setData(parsedData);

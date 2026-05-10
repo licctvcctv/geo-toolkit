@@ -5,6 +5,7 @@ import {
   BookOpen, Compass, Microscope, Thermometer, BarChart2,
   ChevronDown, ChevronUp, Flame, ArrowRight, Send, Bot, User, Sparkles, Loader2
 } from 'lucide-react';
+import { scrollChatContainerToBottom } from '../utils/chatScroll';
 
 // ==================== AI Chat ====================
 
@@ -30,22 +31,15 @@ const HERO_METRICS = [
   { label: '展示输出', value: '图件+报告', detail: '可视化和 AI 解读联动' },
 ];
 
-const DEFENSE_HIGHLIGHTS = [
-  '首页直接展示 AI 地质知识问答，答辩时不再是空首页。',
-  '上传 Excel / CSV 后可自动识别矿物类型并切换对应分析流程。',
-  '绿泥石结果已按高温组与低温组分色，并增加组间差值提示。',
-  '可视化页支持自动判别数据来源，减少现场切页解释成本。',
-];
-
 function AiChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollChatContainerToBottom(messagesContainerRef.current);
   }, [messages]);
 
   const sendMessage = async (text: string) => {
@@ -166,19 +160,21 @@ function AiChat() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs text-emerald-50/85 sm:w-[320px]">
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">适合答辩现场追问</div>
             <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">支持连续多轮上下文</div>
           </div>
         </div>
       </div>
 
       {/* Messages area */}
-      <div className="h-[440px] overflow-y-auto px-6 py-5 space-y-4 bg-[linear-gradient(180deg,rgba(236,253,245,0.6),rgba(248,250,252,0.9))]">
+      <div 
+        ref={messagesContainerRef}
+        className="h-[440px] overflow-y-auto px-6 py-5 space-y-4 bg-[linear-gradient(180deg,rgba(236,253,245,0.6),rgba(248,250,252,0.9))]"
+      >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full">
             <Bot className="w-14 h-14 text-slate-300 mb-4" />
-            <p className="text-slate-700 mb-1 font-medium">你好，我是你的地质学 AI 助手</p>
-            <p className="text-sm text-slate-500 mb-6">可以直接提问矿物温度计、探针氧化物含义、野外地质与薄片鉴定问题</p>
+            <p className="text-slate-700 mb-1 font-medium">你好，我是你的地质学 AI 小助手</p>
+            <p className="text-sm text-slate-500 mb-6">可以直接提问如矿物温度计、探针氧化物含义、野外地质与薄片鉴定等问题</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-xl">
               {SUGGESTED_QUESTIONS.map((q, i) => (
                 <button
@@ -218,7 +214,6 @@ function AiChat() {
             </div>
           ))
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input area */}
@@ -357,16 +352,16 @@ const Home: React.FC = () => {
         <div className="relative grid gap-10 lg:grid-cols-[1.2fr,0.8fr] lg:items-center">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/80 px-4 py-2 text-xs font-medium tracking-[0.22em] text-emerald-700 shadow-sm">
-              AI Q&A + 矿物温度解译 + 图件展示
+              AI Q&A
             </div>
             <h1
               className="mt-6 max-w-4xl text-4xl font-semibold leading-tight text-slate-900 sm:text-5xl lg:text-6xl"
               style={{ fontFamily: DISPLAY_FONT }}
             >
-              地质知识问答与矿物分析，一页进入答辩展示状态
+              地质知识问答与矿物分析
             </h1>
             <p className="mt-5 max-w-3xl text-base leading-8 text-slate-600 sm:text-lg">
-              平台把地质知识问答、电子探针数据上传、绿泥石与黑云母温度计、矿物识别和结果可视化整合到同一工作流中，适合课程展示、毕业答辩和基础教学演示。
+              平台把地质知识问答、电子探针数据上传、绿泥石与黑云母温度计、矿物识别和结果可视化整合到同一工作流中，适合野外地质工作、课程展示及基础教学演示。
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
@@ -397,46 +392,6 @@ const Home: React.FC = () => {
             </div>
           </div>
 
-          <div className="relative">
-            <div className="rounded-[28px] border border-slate-900/5 bg-slate-950 p-6 text-white shadow-[0_35px_90px_-40px_rgba(15,23,42,0.85)]">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium tracking-[0.22em] text-emerald-300/80">DEFENSE READY</p>
-                  <h2 className="mt-2 text-2xl font-semibold">答辩展示重点</h2>
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/15 ring-1 ring-emerald-400/20">
-                  <Compass className="h-5 w-5 text-emerald-300" />
-                </div>
-              </div>
-
-              <div className="mt-6 space-y-3">
-                {DEFENSE_HIGHLIGHTS.map((highlight) => (
-                  <div key={highlight} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm leading-6 text-slate-200">
-                    {highlight}
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <ToolCard
-                  to="/thermometer"
-                  icon={<Thermometer className="w-5 h-5 text-indigo-200" />}
-                  bg="bg-indigo-500/15"
-                  title="绿泥石温度计"
-                  desc="高温组/低温组分开展示"
-                  compact
-                />
-                <ToolCard
-                  to="/identification"
-                  icon={<Microscope className="w-5 h-5 text-emerald-200" />}
-                  bg="bg-emerald-500/15"
-                  title="矿物识别"
-                  desc="自动判别白云母/绿泥石/黑云母"
-                  compact
-                />
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 

@@ -2,11 +2,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Upload, Calculator, AlertCircle, FileSpreadsheet, Settings2, BarChart3, FileText, Loader2, Bot, X } from 'lucide-react';
 import { useData } from '../context/DataContext';
+import ResultsPagination from '../components/ResultsPagination';
 import { parseFile } from '../utils/parseFile';
+import { detectParsedDataKind } from '../utils/dataKind';
 
 function avg(nums: number[]): number {
   return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
 }
+
+const PAGE_SIZE = 50;
 
 const BiotiteThermometer: React.FC = () => {
   const [data, setData] = useState<any[]>([]);
@@ -15,6 +19,7 @@ const BiotiteThermometer: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [removeOutliersFlag, setRemoveOutliersFlag] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [reportLoading, setReportLoading] = useState(false);
   const [report, setReport] = useState('');
@@ -29,12 +34,21 @@ const BiotiteThermometer: React.FC = () => {
     if (!file) return;
     try {
       const parsedData = await parseFile(file);
-      if (parsedData.length === 0) {
+      const kind = detectParsedDataKind(parsedData);
+      if (parsedData.length === 0 || kind === 'unknown') {
         setData([]);
         setResults([]);
         setSummary(null);
         setReport('');
         setError('未识别到可用的氧化物分析数据，请上传包含 SiO2、TiO2、Al2O3、FeO、MgO 等列的 Excel/CSV 文档');
+        return;
+      }
+      if (kind !== 'oxide') {
+        setData([]);
+        setResults([]);
+        setSummary(null);
+        setReport('');
+        setError('当前文件属于 XRD 图谱/寻峰数据，请切换到“数据可视化”页面查看。');
         return;
       }
       setData(parsedData);
@@ -179,6 +193,12 @@ ${statsText}
     if (showReport && reportRef.current) reportRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [showReport]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [results]);
+
+  const pagedResults = results.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -192,8 +212,8 @@ ${statsText}
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1 space-y-6">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(360px,1.1fr)_minmax(0,1.9fr)]">
+        <div className="space-y-6">
           {/* Upload */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -312,7 +332,7 @@ ${statsText}
         </div>
 
         {/* Results */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="space-y-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 min-h-[500px] flex flex-col">
             <h3 className="text-lg font-semibold mb-4">计算结果与结构式 (基于22氧)</h3>
 
@@ -356,13 +376,14 @@ ${statsText}
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-200">
-                    {results.slice(0, 50).map((row, i) => {
+                    {pagedResults.map((row, i) => {
                       const fe = Number(row.Fe) || 0;
                       const mg = Number(row.Mg) || 0;
                       const xMg = fe + mg > 0 ? (mg / (fe + mg)).toFixed(3) : '0.000';
+                      const rowIndex = (currentPage - 1) * PAGE_SIZE + i + 1;
                       return (
                         <tr key={i} className="hover:bg-slate-50">
-                          <td className="px-3 py-2.5 whitespace-nowrap text-sm text-slate-900 font-medium bg-slate-50">{row['Sample'] || row['Point'] || `点位${i+1}`}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-sm text-slate-900 font-medium bg-slate-50">{row['Sample'] || row['Point'] || `点位${rowIndex}`}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap text-sm text-slate-700">{row.Si}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap text-sm text-slate-700">{row.Ti}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap text-sm text-slate-700">{xMg}</td>
@@ -387,11 +408,12 @@ ${statsText}
               </div>
             )}
 
-            {results.length > 50 && (
-              <p className="text-center text-sm text-slate-500 mt-4 py-2 border-t border-slate-100">
-                表格显示前 50 条数据，共 {results.length} 条有效结果
-              </p>
-            )}
+            <ResultsPagination
+              currentPage={currentPage}
+              pageSize={PAGE_SIZE}
+              totalItems={results.length}
+              onPageChange={setCurrentPage}
+            />
           </div>
 
           {/* AI Report */}

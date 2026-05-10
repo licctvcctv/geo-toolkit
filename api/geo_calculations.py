@@ -25,6 +25,8 @@ OXYGEN_PER_OXIDE = {
     'FeO': 1, 'MnO': 1, 'MgO': 1, 'CaO': 1, 'Na2O': 1, 'K2O': 1, 'BaO': 1,
 }
 
+CHLORITE_MAX_ALKALIS = 0.65
+
 
 def calculate_structural_formula(data: dict, target_oxygen: int) -> dict | None:
     """
@@ -140,7 +142,9 @@ def identify_mineral(formula_22o: dict) -> str:
     FeMg = Fe + Mg
     alkalis = K + Na + Ca
 
-    if alkalis < 0.5 and FeMg > 4.0:
+    # Real probe spots can carry minor alkalis from mixed analyses without
+    # leaving the chlorite field; keep a clear gap below mica-like alkalis.
+    if alkalis <= CHLORITE_MAX_ALKALIS and FeMg > 4.0:
         return 'Chlorite'
 
     if alkalis > 1.0:

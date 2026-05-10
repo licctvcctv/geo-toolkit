@@ -4,11 +4,12 @@ import Plot from 'react-plotly.js';
 import { useData } from '../context/DataContext';
 import { BarChart3, PieChart, ScatterChart, Upload, Calculator, AlertCircle } from 'lucide-react';
 import { parseFile } from '../utils/parseFile';
-import { detectAnalysisMode, type AnalysisDetectionResult, type AnalysisSource } from '../utils/analysisDetection';
+import { detectAnalysisMode, type AnalysisDetectionResult } from '../utils/analysisDetection';
+import { detectParsedDataKind, type ParsedDataKind } from '../utils/dataKind';
 import { shouldRenderVisualization } from './visualizationState';
 
-type ChartType = 'scatter2d' | 'scatter3d' | 'histogram' | 'pie';
-type DataSource = 'chlorite' | 'biotite' | 'mineral';
+type ChartType = 'scatter2d' | 'scatter3d' | 'histogram' | 'pie' | 'pattern';
+type DataSource = 'chlorite' | 'biotite' | 'mineral' | 'xrd-pattern' | 'xrd-peaks';
 
 const Visualization: React.FC = () => {
   const { setThermometerResults, setThermometerSummary, setMineralResults, setBiotiteResults, setBiotiteSummary } = useData();
@@ -18,6 +19,7 @@ const Visualization: React.FC = () => {
   const [visualizedResults, setVisualizedResults] = useState<any[]>([]);
   const [visualizedSource, setVisualizedSource] = useState<DataSource | null>(null);
   const [detection, setDetection] = useState<AnalysisDetectionResult | null>(null);
+  const [uploadedKind, setUploadedKind] = useState<ParsedDataKind | null>(null);
   const [dataSource, setDataSource] = useState<DataSource>('chlorite');
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -35,19 +37,37 @@ const Visualization: React.FC = () => {
   const processUploadedFile = async (file: File) => {
     try {
       const parsedData = await parseFile(file);
-      if (parsedData.length === 0) {
+      const parsedKind = detectParsedDataKind(parsedData);
+
+      if (parsedData.length === 0 || parsedKind === 'unknown') {
         setLocalData([]);
         setVisualizedResults([]);
         setVisualizedSource(null);
         setDetection(null);
-        setError('未识别到可用的氧化物分析数据，请上传包含 SiO2、Al2O3、FeO、MgO 等列的 Excel/CSV 文档');
+        setUploadedKind(null);
+        setError('未识别到可用数据，请上传氧化物分析表、XRD 图谱或寻峰结果文件。');
         return;
       }
+
+      if (parsedKind === 'xrd-pattern' || parsedKind === 'xrd-peaks') {
+        const source = parsedKind === 'xrd-pattern' ? 'xrd-pattern' : 'xrd-peaks';
+        setLocalData(parsedData);
+        setVisualizedResults(parsedData);
+        setVisualizedSource(source);
+        setDetection(null);
+        setUploadedKind(parsedKind);
+        setDataSource(source);
+        setChartType('pattern');
+        setError('');
+        return;
+      }
+
       const detected = detectAnalysisMode(parsedData);
       setLocalData(parsedData);
       setVisualizedResults([]);
       setVisualizedSource(null);
       setDetection(detected);
+      setUploadedKind(parsedKind);
       setDataSource(detected.source);
       setError('');
       setChartType(detected.source === 'mineral' ? 'pie' : 'scatter2d');
@@ -91,11 +111,20 @@ const Visualization: React.FC = () => {
     setIsDragging(false);
   };
 
-  const runAnalysis = async (source: AnalysisSource, rows: any[]) => {
+  const runAnalysis = async (source: DataSource, rows: any[]) => {
     if (rows.length === 0) {
       setError('请先上传数据');
       return;
     }
+
+    if (source === 'xrd-pattern' || source === 'xrd-peaks') {
+      setVisualizedResults(rows);
+      setVisualizedSource(source);
+      setChartType('pattern');
+      setError('');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
@@ -153,6 +182,16 @@ const Visualization: React.FC = () => {
     await runAnalysis(dataSource, localData);
   };
 
+  const availableSources: Array<{ value: DataSource; label: string }> = uploadedKind === 'xrd-pattern'
+    ? [{ value: 'xrd-pattern', label: 'XRD 图谱' }]
+    : uploadedKind === 'xrd-peaks'
+      ? [{ value: 'xrd-peaks', label: '寻峰结果' }]
+      : [
+        { value: 'chlorite', label: '绿泥石温度计' },
+        { value: 'biotite', label: '黑云母温度计' },
+        { value: 'mineral', label: '矿物识别' },
+      ];
+
   // Chart data builders
   const scatter2dData = () => {
     if (visualizedSource === 'chlorite' && visualizedResults.length > 0) {
@@ -206,10 +245,91 @@ const Visualization: React.FC = () => {
     }];
   };
 
+  const patternData = () => {
+    if ((visualizedSource !== 'xrd-pattern' && visualizedSource !== 'xrd-peaks') || visualizedResults.length === 0) return [];
+
+    const x = visualizedResults.map((row) => Number(row.TwoTheta));
+
+    if (visualizedSource === 'xrd-peaks') {
+      const y = visualizedResults.map((row) => Number(row.Height ?? row.Area ?? row.Intensity ?? 0));
+      return [{
+        x,
+        y,
+        type: 'bar' as const,
+        name: '寻峰结果',
+        marker: { color: 'rgba(59, 130, 246, 0.75)' },
+      }];
+    }
+
+    const y = visualizedResults.map((row) => Number(row.Intensity ?? 0));
+    return [{
+      x,
+      y,
+      mode: 'lines' as const,
+      type: 'scatter' as const,
+      name: 'XRD 图谱',
+      line: { color: '#2563eb', width: 1.6 },
+    }];
+  };
+
+  const patternLayout = () => ({
+    title: { text: visualizedSource === 'xrd-peaks' ? 'XRD 寻峰结果' : 'XRD 图谱' },
+    xaxis: { title: { text: '2-Theta (°)' } },
+    yaxis: { title: { text: visualizedSource === 'xrd-peaks' ? '峰强 / 面积' : 'Intensity (counts)' } },
+  });
+
   const renderResultTable = () => {
     if (!hasCurrentVisualization) return null;
 
-    const rows = visualizedResults.slice(0, 50);
+    const rows = visualizedResults.slice(0, visualizedSource === 'xrd-pattern' ? 120 : 50);
+
+    if (visualizedSource === 'xrd-pattern' || visualizedSource === 'xrd-peaks') {
+      return (
+        <div className="mt-6 bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+            <h4 className="text-sm font-semibold text-slate-800">
+              数据表格 - {visualizedSource === 'xrd-peaks' ? '寻峰结果' : 'XRD 图谱'}
+            </h4>
+          </div>
+          <div className="overflow-auto max-h-[340px]">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">序号</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">数据集</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">2-Theta</th>
+                  {visualizedSource === 'xrd-peaks' && (
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">d 值</th>
+                  )}
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">
+                    {visualizedSource === 'xrd-peaks' ? 'Height / Area' : 'Intensity'}
+                  </th>
+                  {visualizedSource === 'xrd-peaks' && (
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">FWHM</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((row, i) => (
+                  <tr key={i} className="hover:bg-slate-50">
+                    <td className="px-4 py-2.5 text-slate-500">{i + 1}</td>
+                    <td className="px-4 py-2.5 font-medium text-slate-900">{row.Sample || '-'}</td>
+                    <td className="px-4 py-2.5 text-slate-700">{row.TwoTheta}</td>
+                    {visualizedSource === 'xrd-peaks' && (
+                      <td className="px-4 py-2.5 text-slate-700">{row.DSpacing ?? '-'}</td>
+                    )}
+                    <td className="px-4 py-2.5 text-slate-700">{row.Height ?? row.Area ?? row.Intensity ?? '-'}</td>
+                    {visualizedSource === 'xrd-peaks' && (
+                      <td className="px-4 py-2.5 text-slate-700">{row.FWHM ?? '-'}</td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
 
     if (visualizedSource === 'chlorite') {
       return (
@@ -345,10 +465,13 @@ const Visualization: React.FC = () => {
     { key: 'scatter3d', label: '3D散点', icon: <BarChart3 className="w-4 h-4" />, need: 'thermo' },
     { key: 'histogram', label: '温度直方图', icon: <BarChart3 className="w-4 h-4" />, need: 'thermo' },
     { key: 'pie', label: '矿物分类饼图', icon: <PieChart className="w-4 h-4" />, need: 'mineral' },
+    { key: 'pattern', label: 'XRD 图谱', icon: <BarChart3 className="w-4 h-4" />, need: 'xrd' },
   ];
   const visibleChartTabs = dataSource === 'mineral'
-    ? chartTabs.filter(tab => tab.key === 'pie')
-    : chartTabs.filter(tab => tab.key !== 'pie');
+    ? chartTabs.filter((tab) => tab.need === 'mineral')
+    : dataSource === 'xrd-pattern' || dataSource === 'xrd-peaks'
+      ? chartTabs.filter((tab) => tab.need === 'xrd')
+      : chartTabs.filter((tab) => tab.need === 'thermo');
 
   const renderChart = () => {
     const plotStyle = { width: '100%', height: '100%' };
@@ -375,6 +498,11 @@ const Visualization: React.FC = () => {
         if (d.length === 0) return <NoData />;
         return <Plot data={d} layout={{ title: { text: '矿物类型分布' }, autosize: true, margin: { l: 30, r: 30, b: 30, t: 50 } }} useResizeHandler style={plotStyle} />;
       }
+      case 'pattern': {
+        const d = patternData();
+        if (d.length === 0) return <NoData />;
+        return <Plot data={d} layout={{ ...patternLayout(), autosize: true, margin: baseMargin }} useResizeHandler style={plotStyle} />;
+      }
     }
   };
 
@@ -385,7 +513,7 @@ const Visualization: React.FC = () => {
         <div className="w-full lg:w-72 shrink-0 space-y-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">数据可视化</h1>
-            <p className="mt-1 text-sm text-slate-500">上传数据后自动判别矿物类型，并生成对应结果表和图表</p>
+            <p className="mt-1 text-sm text-slate-500">支持氧化物分析表、XRD 图谱和寻峰结果，自动切到对应可视化模式</p>
           </div>
 
           {/* Upload */}
@@ -423,10 +551,10 @@ const Visualization: React.FC = () => {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-800">
-                    点击选择文件，或把 CSV / Excel 直接拖到这里
+                    点击选择文件，或把数据文件直接拖到这里
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
-                    系统会自动判断矿物类型，并在识别后直接计算结果
+                    氧化物表会自动计算，XRD / 寻峰文件会直接生成图谱
                   </p>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <button
@@ -440,7 +568,7 @@ const Visualization: React.FC = () => {
                       <Upload className="w-3.5 h-3.5" />
                       选择文件
                     </button>
-                    <span className="text-[11px] text-slate-400">支持 .csv / .xlsx / .xls</span>
+                    <span className="text-[11px] text-slate-400">支持 .csv / .txt / .xlsx / .xls</span>
                   </div>
                   {localData.length > 0 && (
                     <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs text-emerald-700 border border-emerald-100">
@@ -459,15 +587,19 @@ const Visualization: React.FC = () => {
                 onChange={(e) => {
                   const nextSource = e.target.value as DataSource;
                   setDataSource(nextSource);
-                  setChartType(nextSource === 'mineral' ? 'pie' : 'scatter2d');
+                  setChartType(nextSource === 'mineral' ? 'pie' : nextSource.startsWith('xrd') ? 'pattern' : 'scatter2d');
                 }}
                 className="w-full text-sm bg-slate-50 border border-slate-200 rounded-lg p-2 focus:ring-indigo-500 focus:border-indigo-500"
               >
-                <option value="chlorite">绿泥石温度计</option>
-                <option value="biotite">黑云母温度计</option>
-                <option value="mineral">矿物识别</option>
+                {availableSources.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
               </select>
-              <p className="mt-1 text-[11px] text-slate-400">系统会先自动判断；如果判断不对，再手动切换。</p>
+              <p className="mt-1 text-[11px] text-slate-400">
+                {uploadedKind === 'xrd-pattern' || uploadedKind === 'xrd-peaks'
+                  ? '当前文件已识别为 XRD 数据，仅保留对应图谱模式。'
+                  : '系统会先自动判断；如果判断不对，再手动切换。'}
+              </p>
             </div>
 
             <button
@@ -476,7 +608,7 @@ const Visualization: React.FC = () => {
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
             >
               <Calculator className="w-4 h-4" />
-              {loading ? '计算中...' : visualizedResults.length > 0 ? '重新计算' : '计算并可视化'}
+              {loading ? '处理中...' : dataSource === 'xrd-pattern' || dataSource === 'xrd-peaks' ? '绘制图谱' : visualizedResults.length > 0 ? '重新计算' : '计算并可视化'}
             </button>
 
             {error && (
@@ -513,6 +645,27 @@ const Visualization: React.FC = () => {
                 </div>
               </div>
             )}
+
+            {!detection && (uploadedKind === 'xrd-pattern' || uploadedKind === 'xrd-peaks') && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800 space-y-2">
+                <div className="font-semibold text-sm">
+                  自动判别：{uploadedKind === 'xrd-peaks' ? 'XRD 寻峰结果' : 'XRD 图谱'}
+                </div>
+                <div>
+                  {uploadedKind === 'xrd-peaks'
+                    ? '已识别为峰值列表，系统将按 2-Theta 与 Height/Area 绘制寻峰图。'
+                    : '已识别为连续谱线数据，系统将按 2-Theta 与 Intensity 绘制 XRD 图谱。'}
+                </div>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <span className="px-2 py-0.5 rounded-full bg-white/70 border border-current/10">
+                    数据点 {localData.length}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-white/70 border border-current/10">
+                    数据集 {localData[0]?.Sample || '-'}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Chart type selector */}
@@ -543,6 +696,8 @@ const Visualization: React.FC = () => {
                 {visualizedSource === 'chlorite' && '绿泥石'}
                 {visualizedSource === 'biotite' && '黑云母'}
                 {visualizedSource === 'mineral' && '矿物识别'}
+                {visualizedSource === 'xrd-pattern' && 'XRD 图谱'}
+                {visualizedSource === 'xrd-peaks' && '寻峰结果'}
                 ：{visualizedResults.length} 条
               </div>
             </div>
